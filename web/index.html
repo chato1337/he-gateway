@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HE Gateway</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; background: #020617; color: #f1f5f9; font-family: ui-sans-serif, system-ui, sans-serif; }
+    header, main { max-width: 64rem; margin: 0 auto; padding: 1.5rem; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    h1 { margin: 0; font-size: 1.5rem; }
+    .muted { color: #94a3b8; font-size: 0.875rem; }
+    .grid { display: grid; gap: 1rem; }
+    @media (min-width: 768px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 1rem; padding: 1.25rem; }
+    .badge { display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.875rem; background: #1e293b; }
+    .dot { width: 0.55rem; height: 0.55rem; border-radius: 999px; background: #fb7185; }
+    .dot.on { background: #34d399; }
+    label { display: block; margin-bottom: 0.35rem; color: #94a3b8; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; }
+    input { width: 100%; box-sizing: border-box; border-radius: 0.6rem; border: 1px solid #334155; background: #020617; color: inherit; padding: 0.6rem 0.75rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+    main button, header button { border: 0; border-radius: 0.6rem; padding: 0.55rem 0.9rem; font: inherit; font-weight: 600; cursor: pointer; background: #1e293b; color: #f1f5f9; }
+    main button.primary { background: #f59e0b; color: #020617; }
+    #ports button { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.8rem; font-weight: 500; }
+    #ports button.active { outline: 1px solid #34d399; }
+    #ports:empty::before { content: "No se detectaron puertos."; color: #94a3b8; }
+    #log { margin: 0; max-height: 22rem; overflow: auto; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.8rem; line-height: 1.45; }
+    #log p { margin: 0 0 0.35rem; }
+    #log .hardware_read { color: #6ee7b7; }
+    #log .error { color: #fda4af; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>HE Gateway</h1>
+      <p class="muted">Puente local entre la web y los dispositivos seriales.</p>
+    </div>
+    <div id="ws-status" class="badge" data-state="disconnected">
+      <span id="ws-dot" class="dot"></span>
+      <span id="ws-label">WebSocket desconectado</span>
+    </div>
+  </header>
+  <main class="grid">
+    <section class="card">
+      <h2>Puertos disponibles</h2>
+      <p class="muted">Clientes conectados: <span id="clients">0</span></p>
+      <div id="ports" class="row"></div>
+      <div class="row">
+        <button id="btn-refresh" type="button">Actualizar</button>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Dispositivo</h2>
+      <label for="device">Puerto COM / TTY</label>
+      <input id="device" list="device-list" placeholder="COM3 o /dev/ttyUSB0" autocomplete="off">
+      <datalist id="device-list"></datalist>
+      <div class="row">
+        <button id="btn-listen" class="primary" type="button">Escuchar</button>
+        <button id="btn-stop" type="button">Detener</button>
+        <button id="btn-open" class="primary" type="button">Abrir puerta</button>
+      </div>
+      <label for="payload" style="margin-top:1rem">Payload</label>
+      <input id="payload" placeholder="texto a escribir en el puerto">
+      <div class="row">
+        <button id="btn-write" type="button">Escribir</button>
+      </div>
+    </section>
+    <section class="card" style="grid-column: 1 / -1">
+      <div class="row" style="justify-content: space-between; margin-top: 0">
+        <h2>Registro de eventos</h2>
+        <button id="btn-clear" type="button">Limpiar</button>
+      </div>
+      <div id="log"></div>
+    </section>
+  </main>
+  <script>
+    const logEl = document.getElementById("log");
+    const portsEl = document.getElementById("ports");
+    const deviceEl = document.getElementById("device");
+    const listEl = document.getElementById("device-list");
+    const statusEl = document.getElementById("ws-status");
+    const dotEl = document.getElementById("ws-dot");
+    const labelEl = document.getElementById("ws-label");
+    const clientsEl = document.getElementById("clients");
+    let socket = null;
+    let retry = null;
+    let listening = new Set();
+
+    function setOnline(on) {
+      statusEl.dataset.state = on ? "connected" : "disconnected";
+      dotEl.classList.toggle("on", on);
+      labelEl.textContent = on ? "WebSocket conectado" : "WebSocket desconectado";
+    }
+
+    function appendLog(event, text) {
+      const line = document.createElement("p");
+      line.className = event || "";
+      const stamp = new Date().toLocaleTimeString();
+      line.textContent = stamp + "  " + text;
+      logEl.append(line);
+      logEl.scrollTop = logEl.scrollHeight;
+      while (logEl.childElementCount > 200) logEl.firstElementChild.remove();
+    }
+
+    function clearLog() {
+      logEl.replaceChildren();
+    }
+
+    function deviceId() {
+      return deviceEl.value.trim();
+    }
+
+    function send(message) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        appendLog("error", "WebSocket desconectado");
+        return;
+      }
+      socket.send(JSON.stringify(message));
+    }
+
+    function renderPorts(ports) {
+      portsEl.replaceChildren();
+      listEl.replaceChildren();
+      (ports || []).forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        listEl.append(option);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "port" + (listening.has(name) ? " active" : "");
+        button.textContent = name;
+        button.addEventListener("click", () => { deviceEl.value = name; });
+        portsEl.append(button);
+      });
+    }
+
+    async function refreshStatus() {
+      try {
+        const res = await fetch("/api/status");
+        if (!res.ok) return;
+        const status = await res.json();
+        clientsEl.textContent = String(status.clients ?? 0);
+        listening = new Set(status.listening || []);
+      } catch (_) { /* the websocket log already shows network errors */ }
+    }
+
+    function handle(msg) {
+      if (msg.event === "hello") {
+        clearLog();
+        setOnline(true);
+        clientsEl.textContent = msg.data || "1";
+        send({ action: "list_ports" });
+        refreshStatus();
+      }
+      if (msg.event === "clients") clientsEl.textContent = msg.data || "0";
+      if (msg.event === "ports") renderPorts(msg.ports || []);
+      if (msg.event === "listening" || msg.event === "listen_stopped") refreshStatus().then(() => renderPorts(currentPortNames()));
+      appendLog(msg.event, JSON.stringify(msg));
+    }
+
+    function currentPortNames() {
+      return [...portsEl.querySelectorAll("button")].map((node) => node.textContent);
+    }
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(proto + "://" + location.host + "/ws");
+      socket = ws;
+      setOnline(false);
+      labelEl.textContent = "WebSocket conectando";
+      ws.onopen = () => setOnline(true);
+      ws.onclose = () => {
+        setOnline(false);
+        clearTimeout(retry);
+        retry = setTimeout(connect, 1500);
+      };
+      ws.onerror = () => ws.close();
+      ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); }
+        catch (_) { appendLog("error", ev.data); return; }
+        handle(msg);
+      };
+    }
+
+    document.getElementById("btn-refresh").addEventListener("click", () => send({ action: "list_ports" }));
+    document.getElementById("btn-clear").addEventListener("click", clearLog);
+    document.getElementById("btn-listen").addEventListener("click", () => {
+      const device_id = deviceId();
+      if (!device_id) return appendLog("error", "indica un device_id");
+      send({ action: "listen", device_id });
+    });
+    document.getElementById("btn-stop").addEventListener("click", () => {
+      const device_id = deviceId();
+      if (!device_id) return appendLog("error", "indica un device_id");
+      send({ action: "stop_listen", device_id });
+    });
+    document.getElementById("btn-open").addEventListener("click", () => {
+      const device_id = deviceId();
+      if (!device_id) return appendLog("error", "indica un device_id");
+      send({ action: "open_door", device_id });
+    });
+    document.getElementById("btn-write").addEventListener("click", () => {
+      const device_id = deviceId();
+      const payload = document.getElementById("payload").value;
+      if (!device_id || !payload) return appendLog("error", "device_id y payload son obligatorios");
+      send({ action: "write", device_id, payload });
+    });
+
+    connect();
+    refreshStatus();
+  </script>
+</body>
+</html>
