@@ -14,13 +14,13 @@ flowchart LR
   device -->|"bytes"| hw -->|"hardware_read"| hub -->|"evento JSON"| client
 ```
 
-Dirección por defecto:
+Dirección por defecto, al abrir el ejecutable:
 
 ```text
-ws://127.0.0.1:8080/ws
+wss://127.0.0.1:8080/ws
 ```
 
-El proceso escucha solo en loopback y acepta cualquier `Origin`. Si la web se sirve por HTTPS, el navegador bloquea `ws://`. En ese caso se generan los PEM en el puesto ([certificados.md](certificados.md)), el gateway se arranca con `-cert` y `-key`, y el cliente usa `wss://127.0.0.1:8080/ws`.
+El proceso escucha solo en loopback y acepta cualquier `Origin`. El certificado local se crea al arrancar, como describe [certificados.md](certificados.md). `-http` deja el canal en `ws://127.0.0.1:8080/ws`. `-cert` y `-key` usan unos PEM ya creados.
 
 Arranque en el puesto:
 

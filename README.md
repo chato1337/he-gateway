@@ -106,14 +106,18 @@ Mantén `CGO_ENABLED=0`: una dependencia que enlace C obliga a tener un compilad
 
 ## Ejecutar
 
+Sin flags, el ejecutable genera un certificado local, pide permiso una vez y abre el dashboard en [https://127.0.0.1:8080](https://127.0.0.1:8080). El detalle está en [docs/certificados.md](docs/certificados.md).
+
+En desarrollo, `-http` evita ese paso y deja el proceso en HTTP:
+
 ```bash
-go run ./cmd/gateway
+go run ./cmd/gateway -http
 ```
 
 El dashboard queda en [http://127.0.0.1:8080](http://127.0.0.1:8080).
 
 ```bash
-go run ./cmd/gateway -addr 127.0.0.1:8080 -baud 9600 -devices COM3,/dev/ttyUSB0
+go run ./cmd/gateway -http -addr 127.0.0.1:8080 -baud 9600 -devices COM3,/dev/ttyUSB0
 ```
 
 `Ctrl+C` (SIGINT o SIGTERM) cierra el HTTP, las conexiones WebSocket y los puertos seriales.
@@ -127,9 +131,10 @@ go run ./cmd/gateway -addr 127.0.0.1:8080 -baud 9600 -devices COM3,/dev/ttyUSB0
 | `-open-hex` | `A00101A2` | Trama de apertura (relé LCUS-1) |
 | `-close-hex` | `A00100A1` | Trama de cierre |
 | `-log-json` | false | Logs `slog` en JSON |
-| `-cert`, `-key` | vacío | TLS opcional para `wss://` |
+| `-http` | false | HTTP plano, sin el certificado automático |
+| `-cert`, `-key` | vacío | PEM propios. No instala la autoridad local |
 
-La aplicación React se conecta a `ws://127.0.0.1:8080/ws`. El proceso escucha solo en loopback y acepta cualquier `Origin`, porque la web en la nube es otro origen. Si esa web se sirve por HTTPS, el navegador bloquea `ws://`. En el puesto se generan `cert.pem` y `key.pem` como indica [docs/certificados.md](docs/certificados.md) y el gateway se arranca con `-cert` y `-key`. El cliente usa `wss://127.0.0.1:8080/ws`.
+Sin flags, la aplicación React se conecta a `wss://127.0.0.1:8080/ws`. Con `-http`, la dirección es `ws://127.0.0.1:8080/ws`. El proceso escucha solo en loopback y acepta cualquier `Origin`, porque la web en la nube es otro origen. `-cert` y `-key` se usan juntos cuando el certificado ya existe; en ese caso tampoco se toca el almacén del sistema.
 
 ## Protocolo
 

@@ -74,7 +74,7 @@ En `cmd.exe` el equivalente es `set CGO_ENABLED=0`, `set GOOS=linux` y `set GOAR
 | macOS Apple Silicon | `darwin` | `arm64` | `gateway-darwin-arm64` |
 | macOS Intel | `darwin` | `amd64` | `gateway-darwin-amd64` |
 
-Copia solo el binario del sistema de destino. El dashboard queda en [http://127.0.0.1:8080](http://127.0.0.1:8080) y el WebSocket en `ws://127.0.0.1:8080/ws`. `Ctrl+C` cierra el HTTP, los sockets y los puertos seriales. `-h` lista los flags.
+Copia solo el binario del sistema de destino. Sin `-http` ni `-cert`, el proceso genera un certificado local y el dashboard queda en [https://127.0.0.1:8080](https://127.0.0.1:8080), con el WebSocket en `wss://127.0.0.1:8080/ws`. El permiso del sistema se pide una vez; los pasos están en [certificados.md](certificados.md). `-http` conserva `http://127.0.0.1:8080`. `Ctrl+C` cierra el HTTP, los sockets y los puertos seriales. `-h` lista los flags.
 
 El proceso escucha en loopback. El navegador tiene que estar en la misma máquina. Los nombres de puerto cambian según el sistema: `COM3` en Windows, `/dev/ttyUSB0` o `/dev/ttyACM0` en Linux, `/dev/cu.usbserial-XXXX` en macOS.
 

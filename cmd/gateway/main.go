@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"he-gateway/internal/autocert"
 	"he-gateway/internal/cli"
 	"he-gateway/internal/hardware"
 	"he-gateway/internal/websocket"
@@ -36,9 +38,17 @@ func run(args []string) error {
 	}
 	logger := newLogger(cfg.JSONLogs)
 	slog.SetDefault(logger)
+	if cfg.InstallCA != "" {
+		return autocert.InstallElevated(cfg.InstallCA)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	cfg, err = resolveTLS(ctx, cfg, logger)
+	if err != nil {
+		return err
+	}
 
 	hub := websocket.NewHub(logger)
 	hwCfg := hardware.DefaultConfig()
@@ -82,7 +92,11 @@ func run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", cfg.Addr, err)
 	}
-	logger.Info("gateway listening", "addr", cfg.Addr, "dashboard", "http://"+cfg.Addr)
+	dashboard := dashboardURL(cfg)
+	logger.Info("gateway listening", "addr", cfg.Addr, "dashboard", dashboard)
+	if err := autocert.OpenBrowser(dashboard); err != nil {
+		logger.Error("open dashboard", "err", err)
+	}
 	errCh := make(chan error, 1)
 	go func() {
 		var serveErr error
@@ -109,6 +123,34 @@ func run(args []string) error {
 		return fmt.Errorf("shutdown http server: %w", err)
 	}
 	return nil
+}
+
+func resolveTLS(ctx context.Context, cfg cli.Config, logger *slog.Logger) (cli.Config, error) {
+	if cfg.PlainHTTP || cfg.CertFile != "" {
+		return cfg, nil
+	}
+	dir, err := autocert.DataDir()
+	if err != nil {
+		return cfg, err
+	}
+	certFile, keyFile, err := autocert.Ensure(dir, time.Now())
+	if err != nil {
+		return cfg, err
+	}
+	if err := autocert.Trust(ctx, filepath.Join(dir, autocert.CAName), autocert.SystemInstaller()); err != nil {
+		logger.Error("install local ca", "err", err)
+	}
+	cfg.CertFile = certFile
+	cfg.KeyFile = keyFile
+	return cfg, nil
+}
+
+func dashboardURL(cfg cli.Config) string {
+	scheme := "http"
+	if cfg.CertFile != "" {
+		scheme = "https"
+	}
+	return scheme + "://" + cfg.Addr
 }
 
 func newLogger(jsonLogs bool) *slog.Logger {

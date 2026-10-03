@@ -1,19 +1,42 @@
 # Certificados TLS en el puesto del cliente
 
-Si la aplicación web se sirve por HTTPS, el navegador bloquea `ws://`. El gateway tiene que escuchar con TLS y el cliente conectarse a `wss://127.0.0.1:8080/ws`.
+Si la aplicación web se sirve por HTTPS, el navegador bloquea `ws://`. Al abrir el ejecutable, sin argumentos, el gateway crea una autoridad local y un certificado para `127.0.0.1`, pide permiso una vez y escucha en `wss://127.0.0.1:8080/ws`.
 
-El binario no genera certificados. En cada puesto se crean dos archivos PEM y se pasan al arrancar:
+## Al abrir el programa
 
-| Flag | Archivo |
-| --- | --- |
-| `-cert` | Certificado, en PEM. Puede incluir la cadena. |
-| `-key` | Clave privada, en PEM y sin contraseña. |
+Doble clic en `gateway` o `gateway.exe`. No hay comandos.
 
-Los dos flags van juntos. Si falta uno, el proceso termina con `cert and key must be set together`. El nombre del certificado tiene que cubrir `127.0.0.1` y `localhost`: el navegador comprueba el SAN, no solo el CN.
+El sistema pide confirmación una sola vez, y solo si esa autoridad todavía no está instalada:
 
-La clave no se sube al repositorio ni se copia a otras máquinas. Cada puesto tiene la suya.
+- Windows muestra el aviso del almacén de certificados del usuario. Chrome y Edge confían en ese almacén. Si una política lo bloquea, aparece el control de cuentas (UAC) y la autoridad se instala para la máquina.
+- macOS pide la contraseña del llavero de la sesión.
+- Linux muestra el diálogo de PolicyKit. En un equipo sin PolicyKit el proceso arranca igual y el log indica que el navegador aún no confía en el certificado.
 
-## mkcert
+Si se cancela el aviso, el gateway igual queda en HTTPS. El navegador puede mostrar su propio aviso hasta que se acepte la autoridad.
+
+El navegador se abre en `https://127.0.0.1:8080`. La aplicación React usa:
+
+```javascript
+const socket = new WebSocket("wss://127.0.0.1:8080/ws");
+```
+
+Los archivos quedan en la carpeta de datos del usuario, con permiso de lectura solo para esa cuenta. Cada puesto tiene su propia autoridad; no se copia a otra máquina.
+
+- Windows: `%AppData%\HE Gateway`
+- macOS: `~/Library/Application Support/HE Gateway`
+- Linux: `$XDG_DATA_HOME/he-gateway` o `~/.local/share/he-gateway`
+
+Ahí están `ca.pem`, `ca-key.pem`, `cert.pem` y `key.pem`. El certificado del servidor incluye `localhost` y `127.0.0.1`. Cuando le quedan menos de 30 días, el gateway lo renueva con la misma autoridad, sin otro aviso.
+
+Firefox no usa el almacén del sistema. En Windows el navegador del puesto es Chrome o Edge.
+
+`-http` deja el proceso en `ws://`, sin generar certificados. `-cert` y `-key`, los dos juntos, usan unos PEM ya creados y no tocan el almacén.
+
+## Alternativa manual
+
+Si hace falta un certificado propio, se puede crear con mkcert u OpenSSL y pasarlo al arrancar. Los dos flags van juntos. Si falta uno, el proceso termina con `cert and key must be set together`. La clave va en PEM y sin contraseña. El nombre del certificado tiene que cubrir `127.0.0.1` y `localhost`.
+
+### mkcert
 
 mkcert crea una autoridad local, la instala en el almacén del sistema y firma un certificado que Chrome, Edge y Safari aceptan. Así el `wss://` abierto desde la web en la nube no muestra un aviso. En Firefox hace falta el paquete NSS (`nss` o `libnss3-tools`) antes de `mkcert -install`.
 
@@ -57,7 +80,7 @@ New-Item -ItemType Directory -Force certs | Out-Null
 
 Si se prefiere tener el comando `mkcert` en el PATH, `winget install --id FiloSottile.mkcert -e` instala ese mismo ejecutable. Chocolatey (`choco install mkcert`) y Scoop hacen lo mismo.
 
-## OpenSSL
+### OpenSSL
 
 Si no se puede instalar mkcert, OpenSSL genera un certificado autofirmado. El navegador no confía en él hasta que alguien acepte el aviso en ese puesto.
 

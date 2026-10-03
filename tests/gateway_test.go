@@ -52,6 +52,7 @@ func TestParseArgsRejectsBadInput(t *testing.T) {
 		{name: "extra", args: []string{"nope"}},
 		{name: "baud", args: []string{"-baud", "0"}},
 		{name: "cert only", args: []string{"-cert", "a.pem"}},
+		{name: "http with cert", args: []string{"-http", "-cert", "a.pem", "-key", "b.pem"}},
 		{name: "odd hex", args: []string{"-open-hex", "A0 1"}},
 	}
 	for _, tt := range cases {
@@ -74,7 +75,18 @@ func TestParseArgsDevices(t *testing.T) {
 	if len(cfg.Devices) != 2 || cfg.Devices[0] != "COM3" || cfg.Devices[1] != "/dev/ttyUSB0" {
 		t.Fatalf("devices = %#v", cfg.Devices)
 	}
-	if cfg.Addr != "127.0.0.1:8080" || cfg.Baud != 9600 {
+	if cfg.Addr != "127.0.0.1:8080" || cfg.Baud != 9600 || cfg.PlainHTTP || cfg.CertFile != "" {
+		t.Fatalf("cfg = %+v", cfg)
+	}
+}
+
+func TestParseArgsHTTP(t *testing.T) {
+	t.Parallel()
+	cfg, err := cli.ParseArgs([]string{"-http"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.PlainHTTP || cfg.CertFile != "" || cfg.KeyFile != "" {
 		t.Fatalf("cfg = %+v", cfg)
 	}
 }

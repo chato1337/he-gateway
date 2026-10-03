@@ -12,15 +12,17 @@ import (
 
 // Config is the process configuration derived from command-line flags.
 type Config struct {
-	Addr     string
-	Baud     int
-	Pulse    time.Duration
-	Devices  []string
-	JSONLogs bool
-	OpenCmd  []byte
-	CloseCmd []byte
-	CertFile string
-	KeyFile  string
+	Addr      string
+	Baud      int
+	Pulse     time.Duration
+	Devices   []string
+	JSONLogs  bool
+	OpenCmd   []byte
+	CloseCmd  []byte
+	CertFile  string
+	KeyFile   string
+	PlainHTTP bool
+	InstallCA string
 }
 
 // ParseArgs reads gateway flags from args. Flag help returns flag.ErrHelp.
@@ -34,8 +36,10 @@ func ParseArgs(args []string) (Config, error) {
 	openHex := fs.String("open-hex", "", "relay open frame as hex (default A00101A2)")
 	closeHex := fs.String("close-hex", "", "relay close frame as hex (default A00100A1)")
 	jsonLogs := fs.Bool("log-json", false, "write structured JSON logs")
-	certFile := fs.String("cert", "", "TLS certificate for wss (optional)")
-	keyFile := fs.String("key", "", "TLS private key for wss (optional)")
+	certFile := fs.String("cert", "", "TLS certificate PEM; skips automatic certificates")
+	keyFile := fs.String("key", "", "TLS private key PEM; skips automatic certificates")
+	plainHTTP := fs.Bool("http", false, "serve plain HTTP instead of automatic TLS")
+	installCA := fs.String("install-ca", "", "install the local CA from the data directory into the machine trust store")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
@@ -48,6 +52,9 @@ func ParseArgs(args []string) (Config, error) {
 	if (*certFile == "") != (*keyFile == "") {
 		return Config{}, fmt.Errorf("cert and key must be set together")
 	}
+	if *plainHTTP && (*certFile != "" || *keyFile != "") {
+		return Config{}, fmt.Errorf("http cannot be combined with cert")
+	}
 	openCmd, err := ParseHex(*openHex)
 	if err != nil {
 		return Config{}, err
@@ -57,15 +64,17 @@ func ParseArgs(args []string) (Config, error) {
 		return Config{}, err
 	}
 	return Config{
-		Addr:     *addr,
-		Baud:     *baud,
-		Pulse:    *pulse,
-		Devices:  splitList(*devices),
-		JSONLogs: *jsonLogs,
-		OpenCmd:  openCmd,
-		CloseCmd: closeCmd,
-		CertFile: *certFile,
-		KeyFile:  *keyFile,
+		Addr:      *addr,
+		Baud:      *baud,
+		Pulse:     *pulse,
+		Devices:   splitList(*devices),
+		JSONLogs:  *jsonLogs,
+		OpenCmd:   openCmd,
+		CloseCmd:  closeCmd,
+		CertFile:  *certFile,
+		KeyFile:   *keyFile,
+		PlainHTTP: *plainHTTP,
+		InstallCA: *installCA,
 	}, nil
 }
 
